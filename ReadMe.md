@@ -23,7 +23,7 @@ classes like `StringBuilder`.
 
 That first run (22.2 s) includes loading the model into memory.
 
-`--verify` applies the model's patched file to a temp copy and rebuilds it. A result is called **fixed** only when `build_passes` is yes (the patched project rebuilds with no compiler errors). Gemma 3 4B, running locally, fixed 6 of 6 single-error samples; each patched project rebuilt cleanly. Warm runs took 13.5–18.5 s per error. Those are six easy, one-error samples — a start, not proof that it fixes C# errors every time.
+`--verify` applies the model's patched file to a temp copy and rebuilds it. A result is called **fixed** only when `build_passes` is yes (the patched project rebuilds with no compiler errors). Gemma 3 4B, running locally, fixed 6 of 6 single-error samples; each patched project rebuilt cleanly. That `--all --verify` run averaged 11.0 s per error (6.1–21.7 s). Those are six easy, one-error samples — a start, not proof that it fixes C# errors every time.
 
 ## Requirements
 
@@ -40,9 +40,10 @@ ollama pull gemma3:4b
 ```
 dotnet run --project src/BuildBuddy -- <path-to-project-or-folder>
 dotnet run --project src/BuildBuddy -- <path-to-project-or-folder> --verify
+dotnet run --project src/BuildBuddy -- samples --all --verify
 ```
 
-`--verify` copies the target (skipping `bin/` and `obj/`), overwrites the failing file with the model's complete corrected source, rebuilds the copy, then deletes it. Results append to `results/results.csv`. The `fixed` column is `yes` only when `build_passes` is `yes`.
+`--verify` copies the target (skipping `bin/` and `obj/`), overwrites the failing file with the model's complete corrected source, rebuilds the copy, then deletes it. `--all` runs that on every subfolder and prints one combined summary (fix rate and average seconds). Results append to `results/results.csv`. The `fixed` column is `yes` only when `build_passes` is `yes`. If Ollama fails, that error is recorded as not fixed and the run continues.
 
 Optional environment variables:
 

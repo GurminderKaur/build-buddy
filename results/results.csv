@@ -1,7 +1,7 @@
 timestamp,model,sample,error_code,build_passes,fixed,seconds
-2026-11-06T17:44:11.2712838Z,gemma3:4b,cs0246-missing-using,CS0246,yes,yes,17.9
-2026-11-06T17:44:27.8101183Z,gemma3:4b,cs1061-missing-member,CS1061,yes,yes,13.5
-2026-11-06T17:44:44.6350069Z,gemma3:4b,cs0103-undeclared-name,CS0103,yes,yes,13.7
-2026-11-06T17:47:01.2520461Z,gemma3:4b,cs0029-type-mismatch,CS0029,yes,yes,16.2
-2026-11-06T17:45:05.1105518Z,gemma3:4b,cs1002-missing-semicolon,CS1002,yes,yes,14.9
-2026-11-06T17:45:26.4743213Z,gemma3:4b,cs0161-not-all-paths-return,CS0161,yes,yes,18.5
+2026-11-06T18:13:46.3333961Z,gemma3:4b,cs0029-type-mismatch,CS0029,yes,yes,21.7
+2026-11-06T18:13:58.3697201Z,gemma3:4b,cs0103-undeclared-name,CS0103,yes,yes,7.8
+2026-11-06T18:14:15.1318373Z,gemma3:4b,cs0161-not-all-paths-return,CS0161,yes,yes,12.4
+2026-11-06T18:14:28.9960547Z,gemma3:4b,cs0246-missing-using,CS0246,yes,yes,9.6
+2026-11-06T18:14:39.3517238Z,gemma3:4b,cs1002-missing-semicolon,CS1002,yes,yes,6.1
+2026-11-06T18:14:51.6796552Z,gemma3:4b,cs1061-missing-member,CS1061,yes,yes,8.3

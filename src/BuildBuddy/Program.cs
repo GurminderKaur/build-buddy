@@ -9,23 +9,18 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 
 var verify = args.Any(a => a == "--verify");
-var positional = args.Where(a => a != "--verify").ToArray();
+var all = args.Any(a => a == "--all");
+var positional = args.Where(a => a is not ("--verify" or "--all")).ToArray();
 var target = positional.Length > 0 ? positional[0] : ".";
 var model = Environment.GetEnvironmentVariable("BUILDBUDDY_MODEL") ?? "gemma3:4b";
 var ollamaUrl = Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "http://localhost:11434";
-var sampleName = GetSampleName(target);
 
-Console.WriteLine($"Building {target} ...");
-var (buildOutput, _) = await RunDotnetBuild(target);
-var errors = ParseErrors(buildOutput);
-
-if (errors.Count == 0)
+var targets = all ? GetSubfolders(target) : [target];
+if (all && targets.Count == 0)
 {
-    Console.WriteLine("No C# compiler errors found. Nothing to explain.");
-    return 0;
+    Console.WriteLine($"No subfolders found in {target}.");
+    return 1;
 }
-
-Console.WriteLine($"Found {errors.Count} error(s). Asking {model} ...\n");
 
 using var http = new HttpClient
 {
@@ -33,50 +28,116 @@ using var http = new HttpClient
     Timeout = TimeSpan.FromMinutes(5)
 };
 
-var results = new List<VerifyResult>();
+var allResults = new List<VerifyResult>();
+var anyCompilerErrors = false;
 
-foreach (var e in errors)
+foreach (var t in targets)
 {
-    var snippet = ReadSnippet(e.File, e.Line, context: 4);
-    var prompt = verify ? BuildVerifyPrompt(e, snippet) : BuildExplainPrompt(e, snippet);
-
-    var sw = Stopwatch.StartNew();
-    var answer = await AskOllama(http, model, prompt);
-
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine($"{e.Code}  {Path.GetFileName(e.File)}:{e.Line}  {e.Message}");
-    Console.ResetColor();
-    Console.WriteLine(answer.Trim());
-
-    if (verify)
-    {
-        var outcome = await TryVerifyFix(target, e, answer);
-        sw.Stop();
-        var fixedIt = outcome.BuildPasses;
-        Console.ForegroundColor = fixedIt ? ConsoleColor.Green : ConsoleColor.Yellow;
-        Console.WriteLine(fixedIt
-            ? "Verify: build_passes=yes; calling this fixed."
-            : $"Verify: build_passes=no; not calling this fixed. {outcome.Detail}");
-        Console.ResetColor();
-        results.Add(new VerifyResult(sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds));
-        AppendCsv(model, sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds);
-    }
-    else
-    {
-        sw.Stop();
-    }
-
-    Console.ForegroundColor = ConsoleColor.DarkGray;
-    Console.WriteLine($"({sw.Elapsed.TotalSeconds:F1}s with {model})\n");
-    Console.ResetColor();
+    var (hadErrors, results) = await ProcessTarget(t, verify, http, model);
+    anyCompilerErrors |= hadErrors;
+    allResults.AddRange(results);
 }
 
 if (verify)
-    PrintSummary(results);
+{
+    PrintSummary(allResults);
+    if (all)
+        PrintCombinedStats(allResults);
+}
 
-return 1;
+return anyCompilerErrors ? 1 : 0;
 
 // ---------- helpers ----------
+
+static async Task<(bool HadErrors, List<VerifyResult> Results)> ProcessTarget(
+    string target, bool verify, HttpClient http, string model)
+{
+    var sampleName = GetSampleName(target);
+    var results = new List<VerifyResult>();
+
+    Console.WriteLine($"Building {target} ...");
+    var (buildOutput, _) = await RunDotnetBuild(target);
+    var errors = ParseErrors(buildOutput);
+
+    if (errors.Count == 0)
+    {
+        Console.WriteLine("No C# compiler errors found. Nothing to explain.\n");
+        return (false, results);
+    }
+
+    Console.WriteLine($"Found {errors.Count} error(s). Asking {model} ...\n");
+
+    foreach (var e in errors)
+    {
+        var snippet = ReadSnippet(e.File, e.Line, context: 4);
+        var prompt = verify ? BuildVerifyPrompt(e, snippet) : BuildExplainPrompt(e, snippet);
+
+        var sw = Stopwatch.StartNew();
+        string? answer = null;
+        string? ollamaError = null;
+        try
+        {
+            answer = await AskOllama(http, model, prompt);
+        }
+        catch (Exception ex)
+        {
+            ollamaError = FriendlyOllamaError(ex);
+        }
+        sw.Stop();
+
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"{e.Code}  {Path.GetFileName(e.File)}:{e.Line}  {e.Message}");
+        Console.ResetColor();
+
+        if (ollamaError is not null)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"Could not get a reply from the local model ({model}). {ollamaError}");
+            Console.WriteLine("Recording build_passes=no, fixed=no and continuing.");
+            Console.ResetColor();
+            if (verify)
+            {
+                results.Add(new VerifyResult(sampleName, e.Code, false, false, sw.Elapsed.TotalSeconds));
+                AppendCsv(model, sampleName, e.Code, false, false, sw.Elapsed.TotalSeconds);
+            }
+        }
+        else
+        {
+            Console.WriteLine(answer!.Trim());
+            if (verify)
+            {
+                var outcome = await TryVerifyFix(target, e, answer);
+                var fixedIt = outcome.BuildPasses;
+                Console.ForegroundColor = fixedIt ? ConsoleColor.Green : ConsoleColor.Yellow;
+                Console.WriteLine(fixedIt
+                    ? "Verify: build_passes=yes; calling this fixed."
+                    : $"Verify: build_passes=no; not calling this fixed. {outcome.Detail}");
+                Console.ResetColor();
+                results.Add(new VerifyResult(sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds));
+                AppendCsv(model, sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds);
+            }
+        }
+
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine($"({sw.Elapsed.TotalSeconds:F1}s with {model})\n");
+        Console.ResetColor();
+    }
+
+    return (true, results);
+}
+
+static string FriendlyOllamaError(Exception ex)
+{
+    var text = ex.Message;
+    if (text.Contains("out-of-memory", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("failed to allocate", StringComparison.OrdinalIgnoreCase))
+        return "The model ran out of memory.";
+    if (ex is TaskCanceledException or OperationCanceledException)
+        return "The request timed out.";
+    if (ex is HttpRequestException)
+        return "Ollama returned an error. Is it running, and is the model pulled?";
+    return "Unexpected error talking to Ollama.";
+}
 
 static string BuildExplainPrompt(BuildError e, string snippet) => $"""
     A C# project failed to build.
@@ -208,6 +269,21 @@ static string GetSampleName(string target)
     return new DirectoryInfo(dir).Name;
 }
 
+static List<string> GetSubfolders(string path)
+{
+    var full = Path.GetFullPath(path);
+    if (!Directory.Exists(full)) return [];
+    return Directory.GetDirectories(full)
+        .Where(d =>
+        {
+            var name = Path.GetFileName(d);
+            return !name.Equals("bin", StringComparison.OrdinalIgnoreCase)
+                && !name.Equals("obj", StringComparison.OrdinalIgnoreCase);
+        })
+        .OrderBy(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
+
 static void PrintSummary(List<VerifyResult> results)
 {
     Console.WriteLine("Verify summary");
@@ -218,6 +294,21 @@ static void PrintSummary(List<VerifyResult> results)
         Console.WriteLine(
             $"{r.Sample,-28} {r.ErrorCode,-10} {(r.BuildPasses ? "yes" : "no"),-14} {(r.Fixed ? "yes" : "no"),-8} {r.Seconds,8:F1}");
     }
+}
+
+static void PrintCombinedStats(List<VerifyResult> results)
+{
+    if (results.Count == 0)
+    {
+        Console.WriteLine("No verify results.");
+        return;
+    }
+
+    var fixedCount = results.Count(r => r.Fixed);
+    var avg = results.Average(r => r.Seconds);
+    var rate = 100.0 * fixedCount / results.Count;
+    Console.WriteLine();
+    Console.WriteLine($"Fixed {fixedCount} of {results.Count} ({rate:F0}%). Average {avg:F1}s per error.");
 }
 
 static void AppendCsv(string model, string sample, string errorCode, bool buildPasses, bool fixedIt, double seconds)

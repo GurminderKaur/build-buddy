@@ -16,7 +16,7 @@ var ollamaUrl = Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "http://loc
 var sampleName = GetSampleName(target);
 
 Console.WriteLine($"Building {target} ...");
-var buildOutput = await RunDotnetBuild(target);
+var (buildOutput, _) = await RunDotnetBuild(target);
 var errors = ParseErrors(buildOutput);
 
 if (errors.Count == 0)
@@ -50,15 +50,16 @@ foreach (var e in errors)
 
     if (verify)
     {
-        var (fixedIt, detail) = await TryVerifyFix(target, e, answer);
+        var outcome = await TryVerifyFix(target, e, answer);
         sw.Stop();
+        var fixedIt = outcome.BuildPasses;
         Console.ForegroundColor = fixedIt ? ConsoleColor.Green : ConsoleColor.Yellow;
         Console.WriteLine(fixedIt
-            ? $"Verify: original {e.Code} is gone."
-            : $"Verify: original {e.Code} is still present. {detail}");
+            ? "Verify: build_passes=yes; calling this fixed."
+            : $"Verify: build_passes=no; not calling this fixed. {outcome.Detail}");
         Console.ResetColor();
-        results.Add(new VerifyResult(sampleName, e.Code, fixedIt, sw.Elapsed.TotalSeconds));
-        AppendCsv(model, sampleName, e.Code, fixedIt, sw.Elapsed.TotalSeconds);
+        results.Add(new VerifyResult(sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds));
+        AppendCsv(model, sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds);
     }
     else
     {
@@ -112,17 +113,17 @@ static string BuildVerifyPrompt(BuildError e, string snippet)
         """;
 }
 
-static async Task<(bool Fixed, string Detail)> TryVerifyFix(string target, BuildError error, string answer)
+static async Task<VerifyOutcome> TryVerifyFix(string target, BuildError error, string answer)
 {
     var corrected = ExtractCsharpFile(answer);
     if (corrected is null)
-        return (false, "No csharp code block in the model reply.");
+        return new VerifyOutcome(false, "No csharp code block in the model reply.");
 
     var projectDir = GetProjectDir(target);
     var originalFull = Path.GetFullPath(error.File);
     var relative = Path.GetRelativePath(projectDir, originalFull);
-    if (relative.StartsWith("..", StringComparison.Ordinal))
-        return (false, "Failing file is outside the target project folder.");
+    if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        return new VerifyOutcome(false, "Failing file is outside the target project folder.");
 
     var tempDir = Path.Combine(Path.GetTempPath(), "build-buddy-" + Guid.NewGuid().ToString("N"));
     try
@@ -132,12 +133,21 @@ static async Task<(bool Fixed, string Detail)> TryVerifyFix(string target, Build
         Directory.CreateDirectory(Path.GetDirectoryName(copyFile)!);
         File.WriteAllText(copyFile, corrected.ReplaceLineEndings(Environment.NewLine));
 
-        var copyBuild = await RunDotnetBuild(tempDir);
+        var (copyBuild, exitCode) = await RunDotnetBuild(tempDir);
         var copyErrors = ParseErrors(copyBuild);
+        var buildPasses = exitCode == 0 && copyErrors.Count == 0;
+        if (buildPasses)
+            return new VerifyOutcome(true, "");
+
         var stillThere = copyErrors.Any(ce =>
             ce.Code == error.Code &&
             string.Equals(Path.GetFileName(ce.File), Path.GetFileName(error.File), StringComparison.OrdinalIgnoreCase));
-        return (!stillThere, stillThere ? "Rebuild still reports it." : "");
+        var detail = stillThere
+            ? $"Rebuild still reports {error.Code}."
+            : copyErrors.Count > 0
+                ? $"Rebuild failed with {copyErrors.Count} other error(s)."
+                : $"dotnet build exited {exitCode}.";
+        return new VerifyOutcome(false, detail);
     }
     finally
     {
@@ -201,16 +211,16 @@ static string GetSampleName(string target)
 static void PrintSummary(List<VerifyResult> results)
 {
     Console.WriteLine("Verify summary");
-    Console.WriteLine($"{"sample",-28} {"error",-10} {"fixed",-8} {"seconds",8}");
-    Console.WriteLine(new string('-', 58));
+    Console.WriteLine($"{"sample",-28} {"error",-10} {"build_passes",-14} {"fixed",-8} {"seconds",8}");
+    Console.WriteLine(new string('-', 72));
     foreach (var r in results)
     {
         Console.WriteLine(
-            $"{r.Sample,-28} {r.ErrorCode,-10} {(r.Fixed ? "yes" : "no"),-8} {r.Seconds,8:F1}");
+            $"{r.Sample,-28} {r.ErrorCode,-10} {(r.BuildPasses ? "yes" : "no"),-14} {(r.Fixed ? "yes" : "no"),-8} {r.Seconds,8:F1}");
     }
 }
 
-static void AppendCsv(string model, string sample, string errorCode, bool fixedIt, double seconds)
+static void AppendCsv(string model, string sample, string errorCode, bool buildPasses, bool fixedIt, double seconds)
 {
     var dir = Path.Combine(Directory.GetCurrentDirectory(), "results");
     Directory.CreateDirectory(dir);
@@ -218,12 +228,13 @@ static void AppendCsv(string model, string sample, string errorCode, bool fixedI
     var headerNeeded = !File.Exists(path) || new FileInfo(path).Length == 0;
     using var writer = new StreamWriter(path, append: true);
     if (headerNeeded)
-        writer.WriteLine("timestamp,model,sample,error_code,fixed,seconds");
+        writer.WriteLine("timestamp,model,sample,error_code,build_passes,fixed,seconds");
     writer.WriteLine(string.Join(',',
         DateTime.UtcNow.ToString("o"),
         Csv(model),
         Csv(sample),
         Csv(errorCode),
+        buildPasses ? "yes" : "no",
         fixedIt ? "yes" : "no",
         seconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
 }
@@ -235,7 +246,7 @@ static string Csv(string value)
     return value;
 }
 
-static async Task<string> RunDotnetBuild(string target)
+static async Task<(string Output, int ExitCode)> RunDotnetBuild(string target)
 {
     var psi = new ProcessStartInfo("dotnet")
     {
@@ -250,7 +261,7 @@ static async Task<string> RunDotnetBuild(string target)
     var stdout = p.StandardOutput.ReadToEndAsync();
     var stderr = p.StandardError.ReadToEndAsync();
     await p.WaitForExitAsync();
-    return await stdout + await stderr;
+    return (await stdout + await stderr, p.ExitCode);
 }
 
 static List<BuildError> ParseErrors(string output)
@@ -306,4 +317,5 @@ static async Task<string> AskOllama(HttpClient http, string model, string prompt
 }
 
 record BuildError(string File, int Line, int Col, string Code, string Message);
-record VerifyResult(string Sample, string ErrorCode, bool Fixed, double Seconds);
+record VerifyOutcome(bool BuildPasses, string Detail);
+record VerifyResult(string Sample, string ErrorCode, bool BuildPasses, bool Fixed, double Seconds);

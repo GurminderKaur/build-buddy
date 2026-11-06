@@ -21,7 +21,9 @@ classes like `StringBuilder`.
 (22.2s with gemma3:4b)
 ```
 
-That first run (22.2 s) includes loading the model into memory. Warm timings and accuracy across more samples will be added as the benchmark grows.
+That first run (22.2 s) includes loading the model into memory.
+
+`--verify` applies the model's patched file to a temp copy and rebuilds it. A result is called **fixed** only when `build_passes` is yes (the patched project rebuilds with no compiler errors). Gemma 3 4B, running locally, fixed 6 of 6 single-error samples; each patched project rebuilt cleanly. Warm runs took 13.5–18.5 s per error. Those are six easy, one-error samples — a start, not proof that it fixes C# errors every time.
 
 ## Requirements
 
@@ -37,7 +39,10 @@ ollama pull gemma3:4b
 
 ```
 dotnet run --project src/BuildBuddy -- <path-to-project-or-folder>
+dotnet run --project src/BuildBuddy -- <path-to-project-or-folder> --verify
 ```
+
+`--verify` copies the target (skipping `bin/` and `obj/`), overwrites the failing file with the model's complete corrected source, rebuilds the copy, then deletes it. Results append to `results/results.csv`. The `fixed` column is `yes` only when `build_passes` is `yes`.
 
 Optional environment variables:
 
@@ -55,12 +60,13 @@ The exit code is `0` when the build has no compiler errors and `1` when it does.
 3. Reads a few lines of source around each error.
 4. Sends the error code, message, and code snippet to the local model at temperature 0.
 5. Prints the explanation, the suggested fix, and how long the model took.
+6. With `--verify`, rebuilds a patched copy and records `build_passes` / `fixed` only if that rebuild is clean.
 
 No NuGet packages are needed. It talks to Ollama with plain `HttpClient`.
 
 ## Roadmap
 
-- [ ] Benchmark set of broken sample projects, one per common error code
-- [ ] Automatic check: apply the suggested fix and see whether the build passes
+- [x] Benchmark set of broken sample projects, one per common error code
+- [x] Automatic check: apply the suggested fix and see whether the build passes
 - [ ] Accuracy and timing table across local models
 - [ ] Package as a `dotnet` global tool

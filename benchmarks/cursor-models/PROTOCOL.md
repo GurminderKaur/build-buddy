@@ -45,6 +45,9 @@ Fill in before running:
 | Model 2 | GPT-5.6 Sol |
 | Model 3 | Gemini 4 Argon |
 
+## Deviations from the plan
+- **2026-11-07:** At run time only Grok 4.7 was selectable on my Cursor plan. Composer, GPT-5.6 Sol and Gemini 4 Argon showed as locked. Grok 4.7 was run with the unchanged prompt; the others will be run if they unlock before the deadline.
+
 ## Limitations
 - One run per model (n = 1). Model output varies between runs, so treat this as a snapshot, not a ranking.
 - One small, single-file program with known errors. Real projects are messier.

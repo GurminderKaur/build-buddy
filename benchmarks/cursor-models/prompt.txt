@@ -1,0 +1,19 @@
+Fix this C# top-level program so it compiles with `dotnet build` on .NET 8+.
+Return the complete corrected file in one ```csharp code block.
+Then list each error you fixed on its own line, with its compiler error code.
+Change only what is needed to compile.
+
+```csharp
+using System.Net.Http;
+
+var client = new HttpClient();
+string body = client.GetStringAsync("https://example.com");
+int length = body.Lenght;
+Console.WriteLine($"Length: {length}, half: {Half(length)}");
+
+static int Half(int n)
+{
+    if (n > 0)
+        return n / 2;
+}
+```

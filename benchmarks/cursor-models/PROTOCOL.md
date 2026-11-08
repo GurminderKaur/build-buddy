@@ -1,4 +1,4 @@
-# Cursor model benchmark: protocol
+﻿# Cursor model benchmark: protocol
 
 Written and committed **before** any model was asked, so the setup can't be tuned to the results.
 
@@ -17,16 +17,16 @@ Given the same broken C# file and the same prompt, which Cursor model returns a 
 `prompt.txt`, pasted unchanged. It already contains the input file.
 
 ## Procedure (identical for every model)
-1. Cursor → **New Chat**, mode set to **Ask** (the model answers but does not edit files).
+1. Cursor â†’ **New Chat**, mode set to **Ask** (the model answers but does not edit files).
 2. Select the model at the bottom of the chat.
 3. Paste `prompt.txt` exactly. Attach nothing else.
-4. Note the time to answer (Cursor's "Worked for…" line, or a stopwatch).
+4. Note the time to answer (Cursor's "Worked forâ€¦" line, or a stopwatch).
 5. Copy the model's code block **unedited** into `answers/<model-name>.cs`.
 6. Screenshot the chat.
 
 ## Scoring (in priority order)
 1. **Builds:** the answer, dropped into a copy of `input/`, builds with zero errors.
-2. **Original errors fixed:** how many of the baseline errors are gone (0–3).
+2. **Original errors fixed:** how many of the baseline errors are gone (0â€“3).
 3. **Lines changed:** lines added + removed versus the input. Fewer is better ("change only what is needed").
 4. **Explanation accuracy:** did it name the right error codes?
 5. **Fix quality (reviewer note):** for CS0029, `await` is the idiomatic fix; `.Result` or `.GetAwaiter().GetResult()` compiles but blocks the thread.
@@ -38,10 +38,10 @@ Fill in before running:
 | Item | Value |
 |---|---|
 | Date | 2026-11-08 |
-| Cursor version (Help → About) | 3.29.9 |
+| Cursor version (Help â†’ About) | 3.29.9 |
 | Cursor plan | Entry level |
 | .NET SDK (`dotnet --version`) | 10.0.403 |
-| Model 1 | Cursor |
+| Model 1 | Grok 4.7 |
 | Model 2 | GPT-5.6 Sol |
 | Model 3 | Gemini 4 Argon |
 

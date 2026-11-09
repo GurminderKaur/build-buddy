@@ -37,16 +37,17 @@ Fill in before running:
 
 | Item | Value |
 |---|---|
-| Date | 2026-11-08 |
+| Date | 2026-11-07 (Grok 4.7), 2026-11-08 (Gemma 3 4B) |
 | Cursor version (Help â†’ About) | 3.29.9 |
 | Cursor plan | Entry level |
 | .NET SDK (`dotnet --version`) | 10.0.403 |
 | Model 1 | Grok 4.7 |
-| Model 2 | GPT-5.6 Sol |
-| Model 3 | Gemini 4 Argon |
+| Model 2 | GPT-5.6 Sol (planned; locked, not run) |
+| Model 3 | Gemini 4 Argon (planned; locked, not run) |
 
 ## Deviations from the plan
 - **2026-11-07:** At run time only Grok 4.7 was selectable on my Cursor plan. Composer, GPT-5.6 Sol and Gemini 4 Argon showed as locked. Grok 4.7 was run with the unchanged prompt; the others will be run if they unlock before the deadline.
+- **2026-11-08:** Models 2 and 3 were still locked. Added Gemma 3 4B, running locally through Ollama (`ollama run gemma3:4b`, default settings, same prompt), as a comparison point. It is **not** a Cursor model. Ollama wrapped two long lines to fit the terminal; they were rejoined when saving the answer, with no other edits.
 
 ## Limitations
 - One run per model (n = 1). Model output varies between runs, so treat this as a snapshot, not a ranking.

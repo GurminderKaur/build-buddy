@@ -1,6 +1,8 @@
-﻿// Build Buddy — Day 1 starter
+﻿// Build Buddy
 // Runs `dotnet build`, catches C# compiler errors, and asks a local model
 // (via Ollama) to explain each one and suggest a fix. Fully offline.
+// With --verify, a fix only counts if the patched project builds AND, when the
+// sample has an expected.txt, the patched program prints that expected output.
 
 using System.Diagnostics;
 using System.Net.Http.Json;
@@ -27,6 +29,10 @@ using var http = new HttpClient
     BaseAddress = new Uri(ollamaUrl),
     Timeout = TimeSpan.FromMinutes(5)
 };
+
+// Load the model once before timing anything, so the first error doesn't pay
+// for the cold start. The load time is reported separately.
+await WarmUpModel(http, model, verify);
 
 var allResults = new List<VerifyResult>();
 var anyCompilerErrors = false;
@@ -97,8 +103,8 @@ static async Task<(bool HadErrors, List<VerifyResult> Results)> ProcessTarget(
             Console.ResetColor();
             if (verify)
             {
-                results.Add(new VerifyResult(sampleName, e.Code, false, false, sw.Elapsed.TotalSeconds));
-                AppendCsv(model, sampleName, e.Code, false, false, sw.Elapsed.TotalSeconds);
+                results.Add(new VerifyResult(sampleName, e.Code, false, null, false, sw.Elapsed.TotalSeconds));
+                AppendCsv(model, sampleName, e.Code, false, null, false, sw.Elapsed.TotalSeconds);
             }
         }
         else
@@ -107,14 +113,16 @@ static async Task<(bool HadErrors, List<VerifyResult> Results)> ProcessTarget(
             if (verify)
             {
                 var outcome = await TryVerifyFix(target, e, answer);
-                var fixedIt = outcome.BuildPasses;
+                // Fixed = builds, and behaves as expected when the sample defines expected output.
+                var fixedIt = outcome.BuildPasses && outcome.Behaves != false;
                 Console.ForegroundColor = fixedIt ? ConsoleColor.Green : ConsoleColor.Yellow;
+                var behavesText = YesNoNa(outcome.Behaves);
                 Console.WriteLine(fixedIt
-                    ? "Verify: build_passes=yes; calling this fixed."
-                    : $"Verify: build_passes=no; not calling this fixed. {outcome.Detail}");
+                    ? $"Verify: build_passes=yes, behaves={behavesText}; calling this fixed."
+                    : $"Verify: build_passes={YesNoNa(outcome.BuildPasses)}, behaves={behavesText}; not calling this fixed. {outcome.Detail}");
                 Console.ResetColor();
-                results.Add(new VerifyResult(sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds));
-                AppendCsv(model, sampleName, e.Code, outcome.BuildPasses, fixedIt, sw.Elapsed.TotalSeconds);
+                results.Add(new VerifyResult(sampleName, e.Code, outcome.BuildPasses, outcome.Behaves, fixedIt, sw.Elapsed.TotalSeconds));
+                AppendCsv(model, sampleName, e.Code, outcome.BuildPasses, outcome.Behaves, fixedIt, sw.Elapsed.TotalSeconds);
             }
         }
 
@@ -178,13 +186,13 @@ static async Task<VerifyOutcome> TryVerifyFix(string target, BuildError error, s
 {
     var corrected = ExtractCsharpFile(answer);
     if (corrected is null)
-        return new VerifyOutcome(false, "No csharp code block in the model reply.");
+        return new VerifyOutcome(false, null, "No csharp code block in the model reply.");
 
     var projectDir = GetProjectDir(target);
     var originalFull = Path.GetFullPath(error.File);
     var relative = Path.GetRelativePath(projectDir, originalFull);
     if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
-        return new VerifyOutcome(false, "Failing file is outside the target project folder.");
+        return new VerifyOutcome(false, null, "Failing file is outside the target project folder.");
 
     var tempDir = Path.Combine(Path.GetTempPath(), "build-buddy-" + Guid.NewGuid().ToString("N"));
     try
@@ -198,7 +206,24 @@ static async Task<VerifyOutcome> TryVerifyFix(string target, BuildError error, s
         var copyErrors = ParseErrors(copyBuild);
         var buildPasses = exitCode == 0 && copyErrors.Count == 0;
         if (buildPasses)
-            return new VerifyOutcome(true, "");
+        {
+            // Behaviour check: only when the sample says what it should print.
+            var expectedFile = Path.Combine(projectDir, "expected.txt");
+            if (!File.Exists(expectedFile))
+                return new VerifyOutcome(true, null, "No expected.txt, so behaviour was not checked.");
+
+            var expected = NormalizeOutput(File.ReadAllText(expectedFile));
+            var (actualRaw, runExit, timedOut) = await RunBuiltProgram(tempDir);
+            if (timedOut)
+                return new VerifyOutcome(true, false, $"Program did not finish within {Limits.RunTimeout.TotalSeconds:F0}s.");
+            if (runExit != 0)
+                return new VerifyOutcome(true, false, $"Program exited with code {runExit}.");
+
+            var actual = NormalizeOutput(actualRaw);
+            return actual == expected
+                ? new VerifyOutcome(true, true, "")
+                : new VerifyOutcome(true, false, $"Output changed. Expected {Quote(expected)}, got {Quote(actual)}.");
+        }
 
         var stillThere = copyErrors.Any(ce =>
             ce.Code == error.Code &&
@@ -208,7 +233,7 @@ static async Task<VerifyOutcome> TryVerifyFix(string target, BuildError error, s
             : copyErrors.Count > 0
                 ? $"Rebuild failed with {copyErrors.Count} other error(s)."
                 : $"dotnet build exited {exitCode}.";
-        return new VerifyOutcome(false, detail);
+        return new VerifyOutcome(false, null, detail);
     }
     finally
     {
@@ -287,12 +312,12 @@ static List<string> GetSubfolders(string path)
 static void PrintSummary(List<VerifyResult> results)
 {
     Console.WriteLine("Verify summary");
-    Console.WriteLine($"{"sample",-28} {"error",-10} {"build_passes",-14} {"fixed",-8} {"seconds",8}");
-    Console.WriteLine(new string('-', 72));
+    Console.WriteLine($"{"sample",-28} {"error",-10} {"build_passes",-14} {"behaves",-9} {"fixed",-8} {"seconds",8}");
+    Console.WriteLine(new string('-', 82));
     foreach (var r in results)
     {
         Console.WriteLine(
-            $"{r.Sample,-28} {r.ErrorCode,-10} {(r.BuildPasses ? "yes" : "no"),-14} {(r.Fixed ? "yes" : "no"),-8} {r.Seconds,8:F1}");
+            $"{r.Sample,-28} {r.ErrorCode,-10} {YesNoNa(r.BuildPasses),-14} {YesNoNa(r.Behaves),-9} {YesNoNa(r.Fixed),-8} {r.Seconds,8:F1}");
     }
 }
 
@@ -304,31 +329,119 @@ static void PrintCombinedStats(List<VerifyResult> results)
         return;
     }
 
+    var n = results.Count;
+    var builds = results.Count(r => r.BuildPasses);
     var fixedCount = results.Count(r => r.Fixed);
     var avg = results.Average(r => r.Seconds);
-    var rate = 100.0 * fixedCount / results.Count;
     Console.WriteLine();
-    Console.WriteLine($"Fixed {fixedCount} of {results.Count} ({rate:F0}%). Average {avg:F1}s per error.");
+    Console.WriteLine($"Builds: {builds} of {n}. Builds and behaves (fixed): {fixedCount} of {n} ({100.0 * fixedCount / n:F0}%). Average {avg:F1}s per error.");
 }
 
-static void AppendCsv(string model, string sample, string errorCode, bool buildPasses, bool fixedIt, double seconds)
+// results.csv keeps the original 7-column format used by the Day 1-3 posts and the
+// Tiger Data import. Behaviour-checked runs go to results-v2.csv with a behaves column.
+static void AppendCsv(string model, string sample, string errorCode, bool buildPasses, bool? behaves, bool fixedIt, double seconds)
 {
     var dir = Path.Combine(Directory.GetCurrentDirectory(), "results");
     Directory.CreateDirectory(dir);
-    var path = Path.Combine(dir, "results.csv");
+    var path = Path.Combine(dir, "results-v2.csv");
     var headerNeeded = !File.Exists(path) || new FileInfo(path).Length == 0;
     using var writer = new StreamWriter(path, append: true);
     if (headerNeeded)
-        writer.WriteLine("timestamp,model,sample,error_code,build_passes,fixed,seconds");
+        writer.WriteLine("timestamp,model,sample,error_code,build_passes,behaves,fixed,seconds");
     writer.WriteLine(string.Join(',',
         DateTime.UtcNow.ToString("o"),
         Csv(model),
         Csv(sample),
         Csv(errorCode),
-        buildPasses ? "yes" : "no",
-        fixedIt ? "yes" : "no",
+        YesNoNa(buildPasses),
+        YesNoNa(behaves),
+        YesNoNa(fixedIt),
         seconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
 }
+
+static void AppendWarmupCsv(string model, double seconds, bool ok)
+{
+    var dir = Path.Combine(Directory.GetCurrentDirectory(), "results");
+    Directory.CreateDirectory(dir);
+    var path = Path.Combine(dir, "warmup.csv");
+    var headerNeeded = !File.Exists(path) || new FileInfo(path).Length == 0;
+    using var writer = new StreamWriter(path, append: true);
+    if (headerNeeded)
+        writer.WriteLine("timestamp,model,load_seconds,ok");
+    writer.WriteLine(string.Join(',',
+        DateTime.UtcNow.ToString("o"),
+        Csv(model),
+        seconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture),
+        ok ? "yes" : "no"));
+}
+
+static async Task WarmUpModel(HttpClient http, string model, bool record)
+{
+    // Ollama loads a model into memory when it receives a generate request with no prompt.
+    Console.Write($"Loading {model} (cold start, timed separately) ... ");
+    var sw = Stopwatch.StartNew();
+    var ok = true;
+    try
+    {
+        using var resp = await http.PostAsJsonAsync("/api/generate", new { model });
+        ok = resp.IsSuccessStatusCode;
+    }
+    catch
+    {
+        ok = false;
+    }
+    sw.Stop();
+    Console.WriteLine(ok
+        ? $"{sw.Elapsed.TotalSeconds:F1}s\n"
+        : $"failed after {sw.Elapsed.TotalSeconds:F1}s; continuing (the first error may include load time).\n");
+    if (record)
+        AppendWarmupCsv(model, sw.Elapsed.TotalSeconds, ok);
+}
+
+static async Task<(string Output, int ExitCode, bool TimedOut)> RunBuiltProgram(string projectDir)
+{
+    var psi = new ProcessStartInfo("dotnet")
+    {
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        RedirectStandardInput = true,
+        UseShellExecute = false
+    };
+    foreach (var a in new[] { "run", "--project", projectDir, "--no-build" })
+        psi.ArgumentList.Add(a);
+
+    using var p = Process.Start(psi)!;
+    p.StandardInput.Close(); // a program waiting for input gets end-of-input instead of hanging
+    var stdout = p.StandardOutput.ReadToEndAsync();
+    var stderr = p.StandardError.ReadToEndAsync();
+    using var cts = new CancellationTokenSource(Limits.RunTimeout);
+    try
+    {
+        await p.WaitForExitAsync(cts.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        try { p.Kill(entireProcessTree: true); } catch { /* already exited */ }
+        try { await p.WaitForExitAsync(); } catch { /* best effort: let the OS clean it up */ }
+        return ("", -1, true);
+    }
+    _ = await stderr;
+    return (await stdout, p.ExitCode, false);
+}
+
+// Compare output by content: same lines, ignoring line-ending style,
+// trailing spaces, and trailing blank lines.
+static string NormalizeOutput(string text) =>
+    string.Join('\n', text.ReplaceLineEndings("\n").Split('\n').Select(l => l.TrimEnd()))
+        .TrimEnd('\n');
+
+static string Quote(string text)
+{
+    var oneLine = text.Replace("\n", "\\n");
+    return '"' + (oneLine.Length > 60 ? oneLine[..60] + "..." : oneLine) + '"';
+}
+
+static string YesNoNa(bool? value) => value switch { true => "yes", false => "no", null => "n/a" };
 
 static string Csv(string value)
 {
@@ -408,5 +521,11 @@ static async Task<string> AskOllama(HttpClient http, string model, string prompt
 }
 
 record BuildError(string File, int Line, int Col, string Code, string Message);
-record VerifyOutcome(bool BuildPasses, string Detail);
-record VerifyResult(string Sample, string ErrorCode, bool BuildPasses, bool Fixed, double Seconds);
+// Behaves: true/false when the sample has expected.txt and the build passed; null when not checked.
+record VerifyOutcome(bool BuildPasses, bool? Behaves, string Detail);
+record VerifyResult(string Sample, string ErrorCode, bool BuildPasses, bool? Behaves, bool Fixed, double Seconds);
+
+static class Limits
+{
+    public static readonly TimeSpan RunTimeout = TimeSpan.FromSeconds(30);
+}

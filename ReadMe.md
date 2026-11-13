@@ -63,6 +63,13 @@ Before timing anything, Build Buddy loads the model once and records that cold-s
 dotnet run --project src/BuildBuddy -- samples --all --verify --keep-output
 ```
 
+**Held-out samples: `samples-heldout/`.** The `--keep-output` rule was written after seeing the six samples fail, so it could be overfitted to them. These four samples were added afterwards and were never used to tune the prompt: CS0165, CS0161 (a different method), CS0029 (int to bool) and CS1503. Each has one planted error and an `expected.txt` checked against a hand-written correct fix. Run the same model with and without the rule:
+
+```
+dotnet run --project src/BuildBuddy -- samples-heldout --all --verify
+dotnet run --project src/BuildBuddy -- samples-heldout --all --verify --keep-output
+```
+
 `results/results.csv` holds the earlier build-only runs (Nov 6–9) in their original format, unchanged, because the Day 1–3 posts and the Tiger Data import use it.
 
 Optional environment variables:
@@ -91,6 +98,8 @@ No NuGet packages are needed. It talks to Ollama with plain `HttpClient`.
 - [x] Automatic check: apply the suggested fix and see whether the build passes
 - [x] Behaviour check: run the fixed program and compare its output with `expected.txt` ([issue #1](https://github.com/GurminderKaur/build-buddy/issues/1))
 - [x] Time the model's cold start separately from each fix
-- [ ] Rerun the full benchmark with the live model and behaviour checks
+- [x] Rerun the full benchmark with the live model and behaviour checks
+- [ ] Test the `--keep-output` rule on held-out samples
+- [ ] Sandbox the behaviour check (the patched program runs on your machine with only a time limit)
 - [ ] Accuracy and timing table across local models
 - [ ] Package as a `dotnet` global tool

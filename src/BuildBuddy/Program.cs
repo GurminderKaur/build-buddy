@@ -319,12 +319,12 @@ static List<string> GetSubfolders(string path)
 static void PrintSummary(List<VerifyResult> results)
 {
     Console.WriteLine("Verify summary");
-    Console.WriteLine($"{"sample",-28} {"error",-10} {"build_passes",-14} {"behaves",-9} {"fixed",-8} {"seconds",8}");
-    Console.WriteLine(new string('-', 82));
+    Console.WriteLine($"{"sample",-34} {"error",-10} {"build_passes",-14} {"behaves",-9} {"fixed",-8} {"seconds",8}");
+    Console.WriteLine(new string('-', 88));
     foreach (var r in results)
     {
         Console.WriteLine(
-            $"{r.Sample,-28} {r.ErrorCode,-10} {YesNoNa(r.BuildPasses),-14} {YesNoNa(r.Behaves),-9} {YesNoNa(r.Fixed),-8} {r.Seconds,8:F1}");
+            $"{r.Sample,-34} {r.ErrorCode,-10} {YesNoNa(r.BuildPasses),-14} {YesNoNa(r.Behaves),-9} {YesNoNa(r.Fixed),-8} {r.Seconds,8:F1}");
     }
 }
 

@@ -12,7 +12,14 @@ using System.Text.RegularExpressions;
 
 var verify = args.Any(a => a == "--verify");
 var all = args.Any(a => a == "--all");
-var positional = args.Where(a => a is not ("--verify" or "--all")).ToArray();
+// --keep-output: experiment from the Day 2 comments. Adds one rule to the verify prompt
+// asking the model not to change what the program prints. Off by default so the
+// baseline prompt stays reproducible; results go to a separate CSV.
+var keepOutput = args.Any(a => a == "--keep-output");
+Prompts.KeepOutput = keepOutput;
+if (keepOutput)
+    Console.WriteLine("Prompt: baseline + keep-output rule (results go to results/results-v2-keep-output.csv)\n");
+var positional = args.Where(a => a is not ("--verify" or "--all" or "--keep-output")).ToArray();
 var target = positional.Length > 0 ? positional[0] : ".";
 var model = Environment.GetEnvironmentVariable("BUILDBUDDY_MODEL") ?? "gemma3:4b";
 var ollamaUrl = Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "http://localhost:11434";
@@ -178,7 +185,7 @@ static string BuildVerifyPrompt(BuildError e, string snippet)
         In plain English, explain why this error happens (2 sentences max).
         Then return the COMPLETE corrected source file inside one csharp code block
         (not just a snippet). Do not omit any lines. Do not add extra files or commentary
-        inside the code block.
+        inside the code block.{(Prompts.KeepOutput ? "\n" + Prompts.KeepOutputRule : "")}
         """;
 }
 
@@ -343,7 +350,7 @@ static void AppendCsv(string model, string sample, string errorCode, bool buildP
 {
     var dir = Path.Combine(Directory.GetCurrentDirectory(), "results");
     Directory.CreateDirectory(dir);
-    var path = Path.Combine(dir, "results-v2.csv");
+    var path = Path.Combine(dir, Prompts.KeepOutput ? "results-v2-keep-output.csv" : "results-v2.csv");
     var headerNeeded = !File.Exists(path) || new FileInfo(path).Length == 0;
     using var writer = new StreamWriter(path, append: true);
     if (headerNeeded)
@@ -524,6 +531,13 @@ record BuildError(string File, int Line, int Col, string Code, string Message);
 // Behaves: true/false when the sample has expected.txt and the build passed; null when not checked.
 record VerifyOutcome(bool BuildPasses, bool? Behaves, string Detail);
 record VerifyResult(string Sample, string ErrorCode, bool BuildPasses, bool? Behaves, bool Fixed, double Seconds);
+
+static class Prompts
+{
+    public static bool KeepOutput;
+    public const string KeepOutputRule =
+        "Keep the program's behaviour and console output exactly the same: do not add, remove, or change any output statements.";
+}
 
 static class Limits
 {

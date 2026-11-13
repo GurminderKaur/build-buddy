@@ -57,6 +57,12 @@ Results append to `results/results-v2.csv`:
 
 Before timing anything, Build Buddy loads the model once and records that cold-start time separately in `results/warmup.csv`, so the first error no longer pays for loading the model. If Ollama fails, that error is recorded as not fixed and the run continues.
 
+**Prompt experiment: `--keep-output`.** Adds one rule to the verify prompt: *"Keep the program's behaviour and console output exactly the same: do not add, remove, or change any output statements."* It is off by default, so the baseline prompt stays reproducible, and its results go to `results/results-v2-keep-output.csv`. Suggested by a Day 2 reader: at temperature 0 the CS0161 failure repeats every run, which makes it a clean test of one prompt change.
+
+```
+dotnet run --project src/BuildBuddy -- samples --all --verify --keep-output
+```
+
 `results/results.csv` holds the earlier build-only runs (Nov 6–9) in their original format, unchanged, because the Day 1–3 posts and the Tiger Data import use it.
 
 Optional environment variables:

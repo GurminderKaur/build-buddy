@@ -5,3 +5,7 @@ timestamp,model,sample,error_code,build_passes,behaves,fixed,seconds
 2026-11-13T01:29:53.4160728Z,gemma3:4b,cs0246-missing-using,CS0246,yes,yes,yes,9.4
 2026-11-13T01:30:03.6962879Z,gemma3:4b,cs1002-missing-semicolon,CS1002,yes,yes,yes,5.5
 2026-11-13T01:30:17.4627800Z,gemma3:4b,cs1061-missing-member,CS1061,yes,yes,yes,8.8
+2026-11-13T02:43:27.2364177Z,gemma3:4b,heldout-cs0029-int-to-bool,CS0029,yes,yes,yes,5.8
+2026-11-13T02:43:42.0793206Z,gemma3:4b,heldout-cs0161-max-missing-return,CS0161,yes,yes,yes,10.5
+2026-11-13T02:43:51.9103474Z,gemma3:4b,heldout-cs0165-unassigned-local,CS0165,no,n/a,no,5.3
+2026-11-13T02:44:04.5701617Z,gemma3:4b,heldout-cs1503-string-argument,CS1503,yes,yes,yes,8.3

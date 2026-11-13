@@ -11,3 +11,7 @@ timestamp,model,sample,error_code,build_passes,behaves,fixed,seconds
 2026-11-13T02:11:52.3843769Z,qwen3:4b,cs0246-missing-using,CS0246,no,n/a,no,83.0
 2026-11-13T02:20:16.9909838Z,qwen3:4b,cs1002-missing-semicolon,CS1002,no,n/a,no,503.0
 2026-11-13T02:22:25.9872639Z,qwen3:4b,cs1061-missing-member,CS1061,yes,yes,yes,121.0
+2026-11-13T02:41:16.1289152Z,gemma3:4b,heldout-cs0029-int-to-bool,CS0029,yes,yes,yes,4.4
+2026-11-13T02:41:31.4634316Z,gemma3:4b,heldout-cs0161-max-missing-return,CS0161,yes,yes,yes,8.1
+2026-11-13T02:41:41.0350900Z,gemma3:4b,heldout-cs0165-unassigned-local,CS0165,no,n/a,no,4.8
+2026-11-13T02:41:51.7188330Z,gemma3:4b,heldout-cs1503-string-argument,CS1503,yes,yes,yes,4.5

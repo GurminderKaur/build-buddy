@@ -5,3 +5,9 @@ timestamp,model,sample,error_code,build_passes,behaves,fixed,seconds
 2026-11-11T18:02:30.9234173Z,gemma3:4b,cs0246-missing-using,CS0246,yes,yes,yes,10.8
 2026-11-11T18:02:44.9237697Z,gemma3:4b,cs1002-missing-semicolon,CS1002,yes,yes,yes,7.3
 2026-11-11T18:03:00.1667375Z,gemma3:4b,cs1061-missing-member,CS1061,yes,yes,yes,8.6
+2026-11-13T02:07:51.9434814Z,qwen3:4b,cs0029-type-mismatch,CS0029,yes,yes,yes,165.8
+2026-11-13T02:08:55.6403704Z,qwen3:4b,cs0103-undeclared-name,CS0103,yes,yes,yes,58.4
+2026-11-13T02:10:27.8494875Z,qwen3:4b,cs0161-not-all-paths-return,CS0161,yes,yes,yes,87.8
+2026-11-13T02:11:52.3843769Z,qwen3:4b,cs0246-missing-using,CS0246,no,n/a,no,83.0
+2026-11-13T02:20:16.9909838Z,qwen3:4b,cs1002-missing-semicolon,CS1002,no,n/a,no,503.0
+2026-11-13T02:22:25.9872639Z,qwen3:4b,cs1061-missing-member,CS1061,yes,yes,yes,121.0

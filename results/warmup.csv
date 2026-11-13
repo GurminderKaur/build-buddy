@@ -1,3 +1,4 @@
 timestamp,model,load_seconds,ok
 2026-11-11T18:01:18.4318952Z,gemma3:4b,15.1,yes
 2026-11-13T01:28:54.0051108Z,gemma3:4b,12.0,yes
+2026-11-13T02:05:01.2271266Z,qwen3:4b,9.6,yes
